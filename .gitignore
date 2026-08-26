@@ -1,0 +1,15 @@
+data/
+*.edf
+*.npz
+*.npy
+venv/
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+checkpoints/
+*.pt
+*.pth
+.DS_Store
+.claude/
+eeg_roadmap_context.docx
