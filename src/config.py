@@ -55,5 +55,12 @@ def get_device() -> torch.device:
 BATCH_SIZE = 64
 LEARNING_RATE = 1e-3
 EPOCHS = 30
-PATCH_SIZE = 50  # samples per patch (0.5s at 100Hz) -- used by the transformer in Phase 2
 EARLY_STOPPING_PATIENCE = 5
+
+# --- Transformer (Phase 2) ---
+PATCH_SIZE = 50  # samples per patch (0.5s at 100Hz) -> 3000/50 = 60 tokens per epoch
+EMBED_DIM = 64
+N_HEADS = 4
+N_LAYERS = 5
+DIM_FEEDFORWARD = 128
+DROPOUT = 0.1
