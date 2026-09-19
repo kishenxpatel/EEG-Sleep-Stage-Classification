@@ -37,7 +37,7 @@ elif command -v aria2c >/dev/null 2>&1; then
             print "  out=" $2
         }
     ' "$MANIFEST" > "$URLS_FILE"
-    aria2c -x 8 -s 8 -k 1M -j 8 -c -d "$DATA_DIR" -i "$URLS_FILE"
+    aria2c -x 8 -s 8 -k 1M -j 24 -c -d "$DATA_DIR" -i "$URLS_FILE"
     rm -f "$MANIFEST" "$URLS_FILE"
     echo "Full download complete."
 else
