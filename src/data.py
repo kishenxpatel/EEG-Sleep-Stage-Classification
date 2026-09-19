@@ -115,8 +115,15 @@ def extract_epochs_labels(raw: mne.io.Raw) -> Tuple[np.ndarray, np.ndarray]:
     (e.g. "Movement time", "Sleep stage ?") are dropped rather than
     guessed at.
     """
+    # mne.Epochs requires unique event_id values, but STAGE_TO_LABEL
+    # intentionally maps "Sleep stage 3" and "Sleep stage 4" to the same
+    # label (3, per the AASM N3/N4 merge -- see config.py). Give stage 4 a
+    # scratch id MNE will accept, then remap it back after extraction.
+    stage4_temp_id = max(STAGE_TO_LABEL.values()) + 1
+    mne_event_id = {**STAGE_TO_LABEL, "Sleep stage 4": stage4_temp_id}
+
     events, event_id_map = mne.events_from_annotations(
-        raw, event_id=STAGE_TO_LABEL, chunk_duration=float(EPOCH_SEC)
+        raw, event_id=mne_event_id, chunk_duration=float(EPOCH_SEC)
     )
 
     epochs = mne.Epochs(
@@ -131,6 +138,7 @@ def extract_epochs_labels(raw: mne.io.Raw) -> Tuple[np.ndarray, np.ndarray]:
 
     data = epochs.get_data(picks=CHANNEL).squeeze(1).astype(np.float32)  # (n, SAMPLES_PER_EPOCH)
     labels = epochs.events[:, 2].astype(np.int64)
+    labels[labels == stage4_temp_id] = STAGE_TO_LABEL["Sleep stage 4"]
 
     assert data.shape[1] == SAMPLES_PER_EPOCH, (
         f"expected {SAMPLES_PER_EPOCH} samples/epoch, got {data.shape[1]}"
