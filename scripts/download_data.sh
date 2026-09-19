@@ -11,6 +11,7 @@
 set -euo pipefail
 
 BASE_URL="https://physionet.org/files/sleep-edfx/1.0.0"
+S3_URI="s3://physionet-open/sleep-edfx/1.0.0/sleep-cassette/"
 DATA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data"
 mkdir -p "$DATA_DIR"
 
@@ -21,6 +22,16 @@ if [[ "${1:-}" == "--sample" ]]; then
         "$BASE_URL/sleep-cassette/SC4001E0-PSG.edf" \
         "$BASE_URL/sleep-cassette/SC4001EC-Hypnogram.edf"
     echo "Sample download complete."
+elif command -v aws >/dev/null 2>&1; then
+    # Preferred path. PhysioNet mirrors this dataset on a public, unsigned S3
+    # bucket -- cloud-to-cloud transfer bypasses physionet.org's own web
+    # server entirely, so its per-connection/per-file bandwidth throttling
+    # (which caps aria2c well below what -x/-s/-j alone can work around)
+    # doesn't apply. On Colab: `aws` is preinstalled.
+    echo "Downloading Sleep-EDF sleep-cassette split (~8GB) into $DATA_DIR via S3 sync ..."
+    mkdir -p "$DATA_DIR/sleep-cassette"
+    aws s3 sync --no-sign-request "$S3_URI" "$DATA_DIR/sleep-cassette/"
+    echo "Full download complete."
 elif command -v aria2c >/dev/null 2>&1; then
     # Preferred path. PhysioNet throttles bandwidth hard per TCP connection,
     # so a plain sequential `wget -r` over ~400 files can take hours. aria2c
