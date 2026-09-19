@@ -27,12 +27,12 @@ elif command -v aria2c >/dev/null 2>&1; then
     # opens multiple connections per file and downloads multiple files at
     # once, which is the difference between this taking ~15 minutes and
     # ~3+ hours for the same 8GB. On Colab: `!apt-get -qq install aria2` first.
-    echo "Downloading full Sleep-EDF Expanded (~8GB) into $DATA_DIR via aria2c (parallel) ..."
+    echo "Downloading Sleep-EDF sleep-cassette split (~8GB, the split this project uses) into $DATA_DIR via aria2c (parallel) ..."
     MANIFEST="$(mktemp)"
     URLS_FILE="$(mktemp)"
     curl -sS "$BASE_URL/SHA256SUMS.txt" -o "$MANIFEST"
     awk -v base="$BASE_URL" '
-        $2 ~ /^sleep-cassette\// || $2 ~ /^sleep-telemetry\// {
+        $2 ~ /^sleep-cassette\// {
             print base "/" $2
             print "  out=" $2
         }
@@ -47,6 +47,6 @@ else
     echo "Downloading full Sleep-EDF Expanded (~8GB) into $DATA_DIR ..."
     wget -r -N -c -np -nH --cut-dirs=3 -P "$DATA_DIR" \
         --reject "index.html*" \
-        "$BASE_URL/"
+        "$BASE_URL/sleep-cassette/"
     echo "Full download complete."
 fi
