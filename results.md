@@ -1,6 +1,8 @@
 # Results
 
-Full run on Sleep-EDF Expanded (sleep-cassette): 153 subjects, split by subject 91 / 31 / 31 (train / val / test), 84,017 test epochs. Each model was trained with 3 seeds (42, 43, 44) on the same fixed split, so ± values reflect training noise (initialisation, batch order), not test-set choice. Raw per-run metrics are in `results/*.json`; every figure is regenerated from the saved predictions by `scripts/make_figures.py`.
+> **These are the first-run (pipeline v1) results.** That run had two bugs, both since fixed in the code: the split was by recording instead of by person, and the sleep-period crop was a no-op. The v1 results are archived in `results/archive_v1_recording_split/` and analysed in `scripts/v1_postmortem.py`. A v2 re-run is pending; this file will be rewritten from it. Read the numbers below as slightly optimistic and Wake-inflated (see the two caveat sections).
+
+Full run on Sleep-EDF Expanded (sleep-cassette): 153 recordings from 78 people, split by recording 91 / 31 / 31 (train / val / test), 84,017 test epochs. **The split is by recording, not by person; see "Person-level leakage" below.** Each model was trained with 3 seeds (42, 43, 44) on the same fixed split, so ± values reflect training noise (initialisation, batch order), not test-set choice. Raw per-run metrics are in `results/*.json`; every figure is regenerated from the saved predictions by `scripts/make_figures.py`.
 
 ## Headline comparison (mean ± std over 3 seeds)
 
@@ -22,7 +24,7 @@ Per-class F1:
 
 ## Wake dominates the test set (important caveat)
 
-The pipeline keeps whole recordings without trimming, so **68.6% of test epochs are Wake**, mostly long stretches before and after sleep. That inflates accuracy and W F1. Re-scoring the same saved predictions after trimming each subject to the sleep period plus a 30-minute Wake margin (`scripts/cropped_eval.py`; 43.8% of epochs kept, Wake share 28.3%):
+`src/data.py` is meant to crop each recording to the scored period plus a 30-minute buffer, but the crop is a no-op: it treats Wake annotations as "sleep" annotations, so the first one is the start of the recording and nothing is removed. Whole 20+ hour recordings are used, so **68.6% of test epochs are Wake**, mostly long stretches before and after sleep. That inflates accuracy and W F1. Re-scoring the same saved predictions after trimming each subject to the sleep period plus a 30-minute Wake margin (`scripts/v1_postmortem.py`; 43.8% of epochs kept, Wake share 28.3%):
 
 | Model | Macro F1 | Accuracy | W | N1 | N2 | N3 | REM |
 |---|---|---|---|---|---|---|---|
@@ -30,6 +32,19 @@ The pipeline keeps whole recordings without trimming, so **68.6% of test epochs 
 | Transformer | 0.655 ± 0.020 | 0.751 ± 0.006 | 0.883 | 0.258 | 0.800 | 0.703 | 0.630 |
 
 Macro F1 barely moves (-0.014), accuracy drops 0.14, and the CNN-vs-transformer picture is unchanged (paired p = 0.62). **Quote the cropped numbers when comparing to published work**, which typically reports on trimmed recordings; the uncropped accuracy of ~0.88 is not comparable.
+
+## Person-level leakage (important caveat)
+
+Sleep-EDF cassette contains two nights per person (ids `SC4ssN`: `ss` = person, `N` = night), so the 153 recordings come from 78 people. `get_subject_split` splits by recording id, which means one night can be in training while the same person's other night is in the test set. In this split **16 of the 31 test recordings (52%) have the same person in training** (23 of 31 counting validation), despite the code and early docs describing the split as subject-level.
+
+Effect on the saved predictions (`scripts/v1_postmortem.py`, mean over 3 seeds):
+
+| Model | Macro F1, leaked-person recordings (n = 16) | Macro F1, clean recordings (n = 15) |
+|---|---|---|
+| CNN baseline | 0.664 | 0.644 |
+| Transformer | 0.672 | 0.659 |
+
+Leaked recordings score about 0.01–0.02 higher, the direction leakage would predict, but with 16 vs 15 recordings the difference is not significant (per-recording Welch p ≈ 0.45), so this is a hint of mild optimism, not a measured effect size. Both models are affected similarly, so the CNN-vs-transformer comparison is unlikely to change, but absolute numbers should be read as slightly optimistic. The fix is a group split by person (first three digits of the id) followed by a re-run; that was not done here.
 
 ## Error analysis
 
@@ -47,10 +62,10 @@ The single-run figures (`figures/error_analysis_grid.png`, `figures/hypnogram_ha
 
 ## Honest self-assessment
 
-**What this project establishes:** on single-channel Fpz-Cz Sleep-EDF with a subject-level split, a 171k-parameter patch transformer performs about the same as a 4k-parameter CNN (macro F1 ≈ 0.65–0.67), and both fail in the same predictable places: N1, N3 vs N2, REM vs N2, and near stage transitions. Subject-to-subject variation is much larger than the difference between the models.
+**What this project establishes:** on single-channel Fpz-Cz Sleep-EDF with a recording-level split, a 171k-parameter patch transformer performs about the same as a 4k-parameter CNN (macro F1 ≈ 0.65–0.67), and both fail in the same predictable places: N1, N3 vs N2, REM vs N2, and near stage transitions. Subject-to-subject variation is much larger than the difference between the models.
 
-**What it does not establish:** that either architecture is better (3 seeds, p ≈ 0.6); anything about capacity-matched models; state-of-the-art performance (no attempt to compete with published multi-channel, sequence-aware models); generalisation to other hardware, electrode placements or populations; or clinical readiness. The test set is a single fixed 31-subject split, so seed variance does not capture split variance.
+**What it does not establish:** that either architecture is better (3 seeds, p ≈ 0.6); anything about capacity-matched models; state-of-the-art performance (no attempt to compete with published multi-channel, sequence-aware models); generalisation to other hardware, electrode placements or populations; or clinical readiness. The test set is a single fixed split of 31 recordings (27 people), so seed variance does not capture split variance, and the split leaks person identity (see above).
 
-**What we would extend:** multi-channel input (adding EOG to resolve REM/N1/W ambiguity that single-channel EEG structurally cannot); a sequence-of-epochs model that conditions each prediction on neighbouring epochs, which targets the transition errors directly; an N1-specific fix (class weighting or focal loss); cross-validation over subject splits; trimming Wake in training as well as evaluation; external validation on a second dataset (e.g. SHHS).
+**What we would extend:** multi-channel input (adding EOG to resolve REM/N1/W ambiguity that single-channel EEG structurally cannot); a sequence-of-epochs model that conditions each prediction on neighbouring epochs, which targets the transition errors directly; an N1-specific fix (class weighting or focal loss); a person-level grouped split and cross-validation over such splits; trimming Wake in training as well as evaluation; external validation on a second dataset (e.g. SHHS).
 
 **What we learned in the doing:** raw EEG epochs need per-recording amplitude normalisation before a BatchNorm-based CNN, otherwise cross-subject gain differences made validation loss explode and the model collapse to predicting Wake despite normal-looking training loss. Separately, an uncropped Wake-dominated test set can make a mediocre classifier look strong (0.88 accuracy vs 0.74 once trimmed), and a headline metric alone would not have shown that.

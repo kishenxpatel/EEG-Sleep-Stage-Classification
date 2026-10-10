@@ -2,12 +2,15 @@
 
 Each (model, seed) result is written to RESULTS_DIR as soon as it finishes,
 and existing files are skipped on re-run, so a Colab disconnect only loses
-the run in progress. The subject split is fixed (config.SEED); only the
+the run in progress. Every file is stamped with config.PIPELINE_VERSION; a
+file from a different pipeline version raises instead of being reused, so
+results from an older preprocessing/split can never be mixed in silently. The subject split is fixed (config.SEED); only the
 training seed (weight init, batch order) varies, so seed-to-seed spread
 measures training noise rather than test-set composition.
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Callable, Dict, List
 
@@ -17,16 +20,27 @@ from torch.utils.data import DataLoader
 
 from src.analysis import compute_transition_mask, per_subject_f1, top_confusion_pairs
 from src.baseline import CNNBaseline
-from src.config import BATCH_SIZE, LABEL_NAMES, ROOT_DIR, set_seed
+from src.config import BATCH_SIZE, LABEL_NAMES, PIPELINE_VERSION, ROOT_DIR, set_seed
 from src.train import History, evaluate, train_model
 from src.transformer import TransformerClassifier
 
-RESULTS_DIR = ROOT_DIR / "results"
+# EEG_RESULTS_DIR lets smoke tests write somewhere other than the real results/ folder.
+RESULTS_DIR = Path(os.environ.get("EEG_RESULTS_DIR", ROOT_DIR / "results"))
 
 MODEL_FACTORIES: Dict[str, Callable] = {
     "cnn": CNNBaseline,
     "transformer": TransformerClassifier,
 }
+
+
+def _check_version(metrics: dict, path: Path) -> None:
+    found = metrics.get("pipeline_version", "<none: pre-v2 run>")
+    if found != PIPELINE_VERSION:
+        raise RuntimeError(
+            f"{path.name} was produced by pipeline '{found}' but the current pipeline is "
+            f"'{PIPELINE_VERSION}'. Point results/ at a fresh folder (or move the old files "
+            "away) instead of reusing them."
+        )
 
 
 def compute_metrics(results: Dict[str, np.ndarray], test_subject_ids: np.ndarray) -> dict:
@@ -75,6 +89,7 @@ def run_seeds(
         for name, factory in MODEL_FACTORIES.items():
             out = results_dir / f"{name}_seed{seed}.json"
             if out.exists():
+                _check_version(json.loads(out.read_text()), out)
                 print(f"[skip] {out.name} already exists")
                 continue
 
@@ -87,6 +102,7 @@ def run_seeds(
 
             metrics = compute_metrics(results, test_subject_ids)
             metrics.update(
+                pipeline_version=PIPELINE_VERSION,
                 model=name,
                 seed=seed,
                 n_params=n_params,
@@ -121,6 +137,7 @@ def load_run(model: str, seed: int = 42, results_dir: Path = RESULTS_DIR):
             "run notebooks/04_multiseed_metrics.ipynb first (it trains every model once)."
         )
     metrics = json.loads(json_path.read_text())
+    _check_version(metrics, json_path)
     arrays = np.load(npz_path)
     results = {
         "preds": arrays["preds"],
@@ -137,6 +154,7 @@ def load_all(results_dir: Path = RESULTS_DIR) -> Dict[str, List[dict]]:
     grouped: Dict[str, List[dict]] = {}
     for path in sorted(results_dir.glob("*_seed*.json")):
         m = json.loads(path.read_text())
+        _check_version(m, path)
         grouped.setdefault(m["model"], []).append(m)
     return grouped
 

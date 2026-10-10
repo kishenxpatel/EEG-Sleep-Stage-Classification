@@ -13,3 +13,4 @@ checkpoints/
 .DS_Store
 .claude/
 eeg_roadmap_context.docx
+cache/

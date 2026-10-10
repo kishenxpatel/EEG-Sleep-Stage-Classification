@@ -1,5 +1,6 @@
 """Shared configuration: paths, device, seed, and hyperparameters."""
 
+import os
 import random
 from pathlib import Path
 
@@ -35,6 +36,11 @@ STAGE_TO_LABEL = {
 LABEL_NAMES = ["W", "N1", "N2", "N3", "REM"]
 N_CLASSES = len(LABEL_NAMES)
 
+# Bumped whenever preprocessing or the split changes. Stamped into saved
+# results and cached arrays so stale files from an older pipeline are never
+# silently reused. v2 = person-level split + working sleep-period crop.
+PIPELINE_VERSION = "v2-person-split-sleep-crop"
+
 # --- Reproducibility ---
 SEED = 42
 
@@ -54,7 +60,7 @@ def get_device() -> torch.device:
 # --- Hyperparameters ---
 BATCH_SIZE = 64
 LEARNING_RATE = 1e-3
-EPOCHS = 30
+EPOCHS = int(os.environ.get("EEG_MAX_EPOCHS", 30))  # env override is for smoke tests only
 EARLY_STOPPING_PATIENCE = 5
 
 # --- Transformer (Phase 2) ---
